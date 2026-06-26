@@ -11,7 +11,7 @@ import {
   noteNameFromMidi,
   parseChordSymbol,
   parseProgression,
-} from "./chord-engine.js?v=20260626a";
+} from "./chord-engine.js?v=20260626b";
 
 const STORAGE_KEY = "piano-chord-dictionary-recents";
 
@@ -24,6 +24,7 @@ const state = {
   songText: "",
   songAnalysis: null,
   audioContext: null,
+  lastPlayStartedAt: 0,
 };
 
 const app = document.querySelector("#app");
@@ -413,9 +414,21 @@ function bindEvents(parsed, selectedChord) {
     });
   });
 
-  document.querySelector("#play-chord")?.addEventListener("click", () => {
-    if (selectedChord) playChord(selectedChord, state.inversion);
-  });
+  const playButton = document.querySelector("#play-chord");
+  const requestPlay = (event) => {
+    if (!selectedChord) return;
+    if (event?.type === "pointerdown" && event.button !== 0) return;
+
+    const now = performance.now();
+    if (now - state.lastPlayStartedAt < 420) return;
+    state.lastPlayStartedAt = now;
+
+    if (event?.type !== "click" && event?.cancelable) event.preventDefault();
+    playChord(selectedChord, state.inversion);
+  };
+  playButton?.addEventListener("pointerdown", requestPlay);
+  playButton?.addEventListener("touchstart", requestPlay, { passive: false });
+  playButton?.addEventListener("click", requestPlay);
 
   document.querySelector("#copy-notes")?.addEventListener("click", async () => {
     if (!selectedChord) return;
@@ -489,49 +502,104 @@ function renderKeyboard(container, chord, inversion, size = "large") {
   `;
 }
 
+function getAudioContext() {
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContext) return null;
+  state.audioContext ||= new AudioContext();
+  return state.audioContext;
+}
+
+function primeAudioContext() {
+  const context = getAudioContext();
+  if (!context) return null;
+
+  context.resume?.().catch(() => {});
+  const now = context.currentTime;
+  const oscillator = context.createOscillator();
+  const gain = context.createGain();
+  oscillator.type = "sine";
+  oscillator.frequency.setValueAtTime(440, now);
+  gain.gain.setValueAtTime(0.0001, now);
+  oscillator.connect(gain);
+  gain.connect(context.destination);
+  oscillator.start(now);
+  oscillator.stop(now + 0.03);
+  return context;
+}
+
 function playChord(chord, inversion) {
   const voicing = buildVoicing(chord, inversion);
-  const AudioContext = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContext || !voicing) return;
+  if (!voicing) return;
 
-  state.audioContext ||= new AudioContext();
-  state.audioContext.resume?.();
-  const now = state.audioContext.currentTime;
-  const compressor = state.audioContext.createDynamicsCompressor();
-  compressor.threshold.setValueAtTime(-18, now);
+  const context = primeAudioContext();
+  if (!context) return;
+
+  context.resume?.().catch(() => {});
+
+  const now = context.currentTime + 0.06;
+  const compressor = context.createDynamicsCompressor();
+  compressor.threshold.setValueAtTime(-20, now);
   compressor.knee.setValueAtTime(24, now);
-  compressor.ratio.setValueAtTime(5, now);
+  compressor.ratio.setValueAtTime(5.5, now);
   compressor.attack.setValueAtTime(0.003, now);
   compressor.release.setValueAtTime(0.18, now);
 
-  const masterGain = state.audioContext.createGain();
-  masterGain.gain.setValueAtTime(0.72, now);
+  const masterGain = context.createGain();
+  masterGain.gain.setValueAtTime(0.0001, now);
+  masterGain.gain.exponentialRampToValueAtTime(1.75, now + 0.025);
+  masterGain.gain.exponentialRampToValueAtTime(0.0001, now + voicing.midiList.length * 0.36 + 2.8);
   masterGain.connect(compressor);
-  compressor.connect(state.audioContext.destination);
+  compressor.connect(context.destination);
 
   const scheduleTone = (midi, start, duration, peak) => {
-    const oscillator = state.audioContext.createOscillator();
-    const gain = state.audioContext.createGain();
+    const filter = context.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(2600, start);
+    filter.Q.setValueAtTime(0.7, start);
+
+    const oscillator = context.createOscillator();
+    const overtone = context.createOscillator();
+    const gain = context.createGain();
+    const overtoneGain = context.createGain();
+
     oscillator.type = "triangle";
+    overtone.type = "sine";
     oscillator.frequency.setValueAtTime(midiToFrequency(midi), start);
+    overtone.frequency.setValueAtTime(midiToFrequency(midi) * 2, start);
+
     gain.gain.setValueAtTime(0.0001, start);
     gain.gain.exponentialRampToValueAtTime(peak, start + 0.025);
     gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+
+    overtoneGain.gain.setValueAtTime(0.0001, start);
+    overtoneGain.gain.exponentialRampToValueAtTime(peak * 0.22, start + 0.02);
+    overtoneGain.gain.exponentialRampToValueAtTime(0.0001, start + duration * 0.72);
+
     oscillator.connect(gain);
-    gain.connect(masterGain);
+    overtone.connect(overtoneGain);
+    gain.connect(filter);
+    overtoneGain.connect(filter);
+    filter.connect(masterGain);
+
     oscillator.start(start);
-    oscillator.stop(start + duration + 0.05);
+    overtone.start(start);
+    oscillator.stop(start + duration + 0.08);
+    overtone.stop(start + duration + 0.08);
   };
 
   voicing.midiList.forEach((midi, index) => {
-    scheduleTone(midi, now + index * 0.38, 0.5, 0.26);
+    scheduleTone(midi, now + index * 0.36, 0.58, 0.46);
   });
 
-  const chordStart = now + voicing.midiList.length * 0.38 + 0.18;
-  const chordPeak = Math.min(0.18, 0.5 / Math.max(1, voicing.midiList.length));
+  const chordStart = now + voicing.midiList.length * 0.36 + 0.16;
+  const chordPeak = Math.min(0.4, 1.35 / Math.max(2, voicing.midiList.length));
   voicing.midiList.forEach((midi) => {
-    scheduleTone(midi, chordStart, 1.8, chordPeak);
+    scheduleTone(midi, chordStart, 2.25, chordPeak);
   });
 }
+
+window.addEventListener("pointerdown", primeAudioContext, { once: true, passive: true });
+window.addEventListener("touchstart", primeAudioContext, { once: true, passive: true });
+window.addEventListener("touchend", primeAudioContext, { once: true, passive: true });
 
 renderShell();
