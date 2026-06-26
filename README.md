@@ -9,6 +9,10 @@ App local para estudar cifras no piano. Digite um acorde (`A9`, `C#m7(b5)`, `F7(
 - biblioteca por tônica e qualidade;
 - som do acorde pelo botão `Tocar`.
 
+## App publicado
+
+https://thiago-fgvadvs.github.io/dicionario-acordes-piano/
+
 ## Rodar
 
 ```bash
