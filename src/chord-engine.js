@@ -117,6 +117,114 @@ export function splitProgression(input) {
     .filter(Boolean);
 }
 
+const VALID_BASE_QUALITIES = new Set([
+  "",
+  "m",
+  "min",
+  "-",
+  "maj",
+  "M",
+  "maj7",
+  "M7",
+  "maj9",
+  "maj11",
+  "maj13",
+  "m7",
+  "m9",
+  "m11",
+  "m13",
+  "m6",
+  "mMaj7",
+  "mmaj7",
+  "dim",
+  "dim7",
+  "°",
+  "ø",
+  "m7b5",
+  "aug",
+  "+",
+  "sus",
+  "sus2",
+  "sus4",
+  "5",
+  "6",
+  "6/9",
+  "69",
+  "7",
+  "9",
+  "11",
+  "13",
+  "7sus4",
+  "add9",
+  "madd9",
+  "7b9",
+  "7#9",
+  "7#11",
+  "7b13",
+  "7b5",
+  "7#5",
+  "7alt",
+  "alt",
+]);
+
+function stripOuterChordPunctuation(token) {
+  return normalizeSymbol(token)
+    .replace(/^[\[(<{]+/, "")
+    .replace(/[\])>},.;:!?]+$/, "")
+    .trim();
+}
+
+export function isChordCandidate(token) {
+  const clean = stripOuterChordPunctuation(token);
+  if (!clean) return false;
+
+  const slashMatch = clean.match(/\/([A-Ga-g][#b]?)$/);
+  const body = slashMatch ? clean.slice(0, -slashMatch[0].length) : clean;
+  const root = parseRoot(body);
+  if (!root || root.length !== 1 + root.accidental.length) return false;
+
+  let suffix = body.slice(root.length);
+  suffix = suffix.replace(/\((?:[#b]?(?:5|9|11|13)|add(?:2|4|6|9|11|13)|sus[24]?)\)/g, "");
+  suffix = suffix.replace(/[#b](?:5|9|11|13)/g, "");
+
+  return VALID_BASE_QUALITIES.has(suffix);
+}
+
+export function extractChordSymbolsFromChart(chartText) {
+  const results = [];
+  const pushChord = (token) => {
+    const clean = stripOuterChordPunctuation(token);
+    if (clean && isChordCandidate(clean)) results.push(clean);
+  };
+
+  for (const rawLine of normalizeSymbol(chartText).split(/\r?\n/)) {
+    const bracketMatches = [...rawLine.matchAll(/\[([^\]\s]+)\]/g)]
+      .map((match) => match[1])
+      .filter(isChordCandidate);
+    bracketMatches.forEach(pushChord);
+    if (bracketMatches.length) continue;
+
+    const tokens = rawLine
+      .split(/\s+/)
+      .map(stripOuterChordPunctuation)
+      .filter(Boolean);
+
+    if (!tokens.length) continue;
+
+    const chordTokens = tokens.filter(isChordCandidate);
+    const chordRatio = chordTokens.length / tokens.length;
+    const hasSectionCue = /^(intro|tom|verso|refr[aã]o|ponte|solo|final)\b/i.test(rawLine.trim());
+    const looksLikeChordLine =
+      chordTokens.length >= 2 && chordRatio >= 0.45
+      || chordTokens.length >= 1 && tokens.length <= 3 && chordRatio >= 0.5
+      || hasSectionCue && chordTokens.length >= 1;
+
+    if (looksLikeChordLine) chordTokens.forEach(pushChord);
+  }
+
+  return results;
+}
+
 function parseRoot(value) {
   const match = normalizeSymbol(value).match(/^([A-Ga-g])([#b]?)/);
   if (!match) return null;

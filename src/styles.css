@@ -35,7 +35,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -146,24 +147,37 @@ h1 {
   gap: 8px;
 }
 
-input {
+input,
+textarea {
   width: 100%;
-  min-height: 44px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
-  padding: 0 12px;
   color: var(--text);
   background: var(--canvas);
   outline: none;
 }
 
-input:focus {
+input {
+  min-height: 44px;
+  padding: 0 12px;
+}
+
+textarea {
+  min-height: 132px;
+  resize: vertical;
+  padding: 11px 12px;
+  line-height: 1.35;
+}
+
+input:focus,
+textarea:focus {
   border-color: var(--teal);
   box-shadow: 0 0 0 4px rgba(14, 147, 132, 0.12);
 }
 
 .primary-button,
-.ghost-button {
+.ghost-button,
+.secondary-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -197,11 +211,61 @@ input:focus {
 }
 
 .primary-button svg,
-.ghost-button svg {
+.ghost-button svg,
+.secondary-button svg {
   width: 18px;
   height: 18px;
   fill: currentColor;
   flex: 0 0 auto;
+}
+
+.secondary-button {
+  width: 100%;
+  color: var(--teal);
+  border-color: rgba(14, 147, 132, 0.28);
+  background: #edfafa;
+}
+
+.secondary-button:hover {
+  border-color: var(--teal);
+  background: #ddf4f1;
+}
+
+.song-panel {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 10px;
+}
+
+.song-panel label {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.song-status {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 0.8rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.song-status.is-ok {
+  color: #067568;
+  border-color: rgba(14, 147, 132, 0.28);
+  background: #edfafa;
+}
+
+.song-status.is-empty {
+  color: #8a4b00;
+  border-color: rgba(208, 138, 0, 0.26);
+  background: #fff8e6;
 }
 
 .selector-section {
@@ -764,7 +828,8 @@ code {
   }
 
   .primary-button,
-  .ghost-button {
+  .ghost-button,
+  .secondary-button {
     width: 100%;
   }
 

@@ -6,8 +6,9 @@ App local para estudar cifras no piano. Digite um acorde (`A9`, `C#m7(b5)`, `F7(
 - notas e graus da fórmula;
 - inversões disponíveis;
 - acordes de uma sequência;
+- extração de acordes ao colar uma cifra de música;
 - biblioteca por tônica e qualidade;
-- som do acorde pelo botão `Tocar`.
+- som do acorde pelo botão `Tocar`, primeiro nota por nota e depois tudo junto.
 
 ## App publicado
 
@@ -30,3 +31,15 @@ npm test
 ## Cifras suportadas
 
 O motor cobre tríades, suspensos, sextas, sétimas, nonas, décimas primeiras, décimas terceiras, acordes alterados, meio diminutos, diminutos, aumentados, `add`, alterações como `b9`, `#9`, `#11`, `b13`, e baixos com barra como `C/E`.
+
+## Cifras de músicas
+
+Cole linhas como:
+
+```text
+Intro: G D/F# Em C
+Verso
+Am7 D9 Gmaj7
+```
+
+O app extrai os acordes encontrados, preserva a ordem e cria uma progressão clicável com os desenhos no piano.

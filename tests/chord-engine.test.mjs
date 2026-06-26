@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildVoicing, parseChordSymbol, parseProgression } from "../src/chord-engine.js";
+import { buildVoicing, extractChordSymbolsFromChart, parseChordSymbol, parseProgression } from "../src/chord-engine.js";
 
 test("parses A9 with complete dominant ninth tones", () => {
   const chord = parseChordSymbol("A9");
@@ -38,4 +38,23 @@ test("keeps slash bass below the voicing", () => {
   assert.equal(voicing.pitches[0].tone.note, "E");
   assert.equal(voicing.pitches[0].role, "bass");
   assert.ok(voicing.pitches[0].midi < voicing.pitches[1].midi);
+});
+
+test("extracts chords from pasted song chart lines", () => {
+  const symbols = extractChordSymbolsFromChart(`
+Intro: G D/F# Em C
+Verso
+Am7 D9 Gmaj7
+  `);
+  assert.deepEqual(symbols, ["G", "D/F#", "Em", "C", "Am7", "D9", "Gmaj7"]);
+});
+
+test("extracts inline bracket chords without duplicating them", () => {
+  const symbols = extractChordSymbolsFromChart("[G]Hoje [D/F#]eu acordei [Em]cedo [C]");
+  assert.deepEqual(symbols, ["G", "D/F#", "Em", "C"]);
+});
+
+test("does not treat ordinary lyric words as chords", () => {
+  const symbols = extractChordSymbolsFromChart("Amor maior que eu imaginei");
+  assert.deepEqual(symbols, []);
 });

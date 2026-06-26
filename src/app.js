@@ -4,22 +4,25 @@ import {
   ROOTS,
   buildVoicing,
   isBlackKey,
+  extractChordSymbolsFromChart,
   midiToFrequency,
   nearestBAtOrAbove,
   nearestCAtOrBelow,
   noteNameFromMidi,
   parseChordSymbol,
   parseProgression,
-} from "./chord-engine.js";
+} from "./chord-engine.js?v=20260626a";
 
 const STORAGE_KEY = "piano-chord-dictionary-recents";
 
 const state = {
-  query: "A9",
+  query: "",
   selectedIndex: 0,
   inversion: 0,
-  selectedRoot: "A",
-  selectedQuality: "9",
+  selectedRoot: "",
+  selectedQuality: null,
+  songText: "",
+  songAnalysis: null,
   audioContext: null,
 };
 
@@ -60,7 +63,7 @@ function groupedQualities() {
 
 function parseCurrentProgression() {
   const parsed = parseProgression(state.query);
-  return parsed.length ? parsed : [parseChordSymbol("A9")];
+  return parsed;
 }
 
 function selectedChordFrom(parsed) {
@@ -76,6 +79,12 @@ function qualityButtonClass(quality) {
 
 function rootButtonClass(root) {
   return root === state.selectedRoot ? "root-button is-selected" : "root-button";
+}
+
+function syncSelectorsFromChord(chord) {
+  if (!chord?.ok) return;
+  state.selectedRoot = chord.root.name;
+  state.selectedQuality = chord.suffix;
 }
 
 function renderShell() {
@@ -98,12 +107,26 @@ function renderShell() {
         <form class="search-panel" id="search-form">
           <label for="chord-input">Digite uma cifra ou sequência</label>
           <div class="search-row">
-            <input id="chord-input" value="${escapeHtml(state.query)}" autocomplete="off" spellcheck="false" placeholder="A9" />
+            <input id="chord-input" value="${escapeHtml(state.query)}" autocomplete="off" spellcheck="false" placeholder="A9 ou Am7 D9 Gmaj7" />
             <button class="primary-button" type="submit" aria-label="Buscar">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.9 18a7.1 7.1 0 1 1 5.02-12.12A7.1 7.1 0 0 1 10.9 18Zm0-2a5.1 5.1 0 1 0 0-10.2 5.1 5.1 0 0 0 0 10.2Zm5.8.2 4 4-1.5 1.4-4-4 1.5-1.4Z"/></svg>
               Buscar
             </button>
           </div>
+        </form>
+
+        <form class="song-panel" id="song-form">
+          <label for="song-chart-input">Cole a cifra da música</label>
+          <textarea id="song-chart-input" spellcheck="false" placeholder="Intro: G D Em C&#10;Verso: Am7 D9 Gmaj7">${escapeHtml(state.songText)}</textarea>
+          <button class="secondary-button" type="submit">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v4H4V4Zm0 6h10v4H4v-4Zm0 6h16v4H4v-4Zm13-6 4 2-4 2v-4Z"/></svg>
+            Analisar cifra
+          </button>
+          ${state.songAnalysis ? `
+            <div class="song-status ${state.songAnalysis.count ? "is-ok" : "is-empty"}">
+              ${escapeHtml(state.songAnalysis.message)}
+            </div>
+          ` : ""}
         </form>
 
         <section class="selector-section" aria-label="Tonalidade">
@@ -131,7 +154,7 @@ function renderShell() {
                           (quality) => `
                             <button class="${qualityButtonClass(quality)}" data-quality="${escapeHtml(quality.symbol)}" title="${escapeHtml(quality.formula)}">
                               <span>${escapeHtml(quality.label)}</span>
-                              <code>${escapeHtml(state.selectedRoot + quality.symbol)}</code>
+                              <code>${escapeHtml(state.selectedRoot ? state.selectedRoot + quality.symbol : quality.example)}</code>
                             </button>
                           `,
                         )
@@ -162,7 +185,7 @@ function renderShell() {
         <header class="topbar">
           <div>
             <span class="topbar-label">Acorde selecionado</span>
-            <strong>${selectedChord?.ok ? escapeHtml(selectedChord.symbol) : "A9"}</strong>
+            <strong>${selectedChord?.ok ? escapeHtml(selectedChord.symbol) : "Nenhum acorde"}</strong>
           </div>
           <div class="topbar-actions">
             <button class="ghost-button" id="play-chord" ${selectedChord ? "" : "disabled"}>
@@ -176,7 +199,7 @@ function renderShell() {
           </div>
         </header>
 
-        ${selectedChord ? renderMainContent(selectedChord, parsed) : renderErrorContent(parsed)}
+        ${selectedChord ? renderMainContent(selectedChord, parsed) : renderEmptyContent(parsed)}
       </main>
     </div>
   `;
@@ -277,12 +300,13 @@ function renderMainContent(chord, parsed) {
   `;
 }
 
-function renderErrorContent(parsed) {
+function renderEmptyContent(parsed) {
   const errors = parsed.filter((item) => !item.ok);
+  const hasQuery = state.query.trim().length > 0;
   return `
     <section class="empty-state">
-      <h2>Não reconheci essa cifra</h2>
-      <p>${escapeHtml(errors[0]?.error || "Tente uma cifra como A9, C#m7(b5) ou Am7 D9 Gmaj7.")}</p>
+      <h2>${hasQuery ? "Não reconheci essa cifra" : "Digite uma cifra para começar"}</h2>
+      <p>${escapeHtml(hasQuery ? errors[0]?.error || "Tente uma cifra como A9, C#m7(b5) ou Am7 D9 Gmaj7." : "Use a busca rápida ou cole uma cifra inteira de música para extrair os acordes.")}</p>
       <div class="example-list is-centered">
         ${EXAMPLES.slice(0, 6)
           .map((example) => `<button class="example-button" data-example="${escapeHtml(example)}">${escapeHtml(example)}</button>`)
@@ -295,22 +319,48 @@ function renderErrorContent(parsed) {
 function bindEvents(parsed, selectedChord) {
   const form = document.querySelector("#search-form");
   const input = document.querySelector("#chord-input");
+  const songForm = document.querySelector("#song-form");
+  const songInput = document.querySelector("#song-chart-input");
 
   form?.addEventListener("submit", (event) => {
     event.preventDefault();
-    state.query = input.value.trim() || "A9";
+    state.query = input.value.trim();
     state.selectedIndex = 0;
     state.inversion = 0;
-    saveRecent(state.query);
+    syncSelectorsFromChord(parseProgression(state.query).find((item) => item.ok));
+    if (state.query) saveRecent(state.query);
     renderShell();
   });
 
   input?.addEventListener("input", () => {
     state.query = input.value;
-    state.selectedIndex = 0;
-    state.inversion = 0;
+  });
+
+  songInput?.addEventListener("input", () => {
+    state.songText = songInput.value;
+  });
+
+  songForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    state.songText = songInput.value;
+    const symbols = extractChordSymbolsFromChart(state.songText);
+    const uniqueCount = new Set(symbols).size;
+    state.songAnalysis = symbols.length
+      ? {
+          count: symbols.length,
+          message: `${symbols.length} acorde${symbols.length === 1 ? "" : "s"} encontrado${symbols.length === 1 ? "" : "s"} (${uniqueCount} único${uniqueCount === 1 ? "" : "s"}).`,
+        }
+      : {
+          count: 0,
+          message: "Nenhum acorde encontrado. Tente linhas como: G D Em C.",
+        };
+    if (symbols.length) {
+      state.query = symbols.join(" ");
+      state.selectedIndex = 0;
+      state.inversion = 0;
+      syncSelectorsFromChord(parseProgression(state.query).find((item) => item.ok));
+    }
     renderShell();
-    document.querySelector("#chord-input")?.focus();
   });
 
   document.querySelectorAll("[data-example]").forEach((button) => {
@@ -318,6 +368,7 @@ function bindEvents(parsed, selectedChord) {
       state.query = button.dataset.example;
       state.selectedIndex = 0;
       state.inversion = 0;
+      syncSelectorsFromChord(parseProgression(state.query).find((item) => item.ok));
       saveRecent(state.query);
       renderShell();
     });
@@ -326,7 +377,7 @@ function bindEvents(parsed, selectedChord) {
   document.querySelectorAll("[data-root]").forEach((button) => {
     button.addEventListener("click", () => {
       state.selectedRoot = button.dataset.root;
-      state.query = `${state.selectedRoot}${state.selectedQuality}`;
+      state.query = `${state.selectedRoot}${state.selectedQuality ?? ""}`;
       state.selectedIndex = 0;
       state.inversion = 0;
       saveRecent(state.query);
@@ -337,6 +388,7 @@ function bindEvents(parsed, selectedChord) {
   document.querySelectorAll("[data-quality]").forEach((button) => {
     button.addEventListener("click", () => {
       state.selectedQuality = button.dataset.quality;
+      if (!state.selectedRoot) state.selectedRoot = "C";
       state.query = `${state.selectedRoot}${state.selectedQuality}`;
       state.selectedIndex = 0;
       state.inversion = 0;
@@ -356,6 +408,7 @@ function bindEvents(parsed, selectedChord) {
     button.addEventListener("click", () => {
       state.selectedIndex = Number(button.dataset.chordIndex);
       state.inversion = 0;
+      syncSelectorsFromChord(parsed.filter((item) => item.ok)[state.selectedIndex]);
       renderShell();
     });
   });
@@ -442,23 +495,42 @@ function playChord(chord, inversion) {
   if (!AudioContext || !voicing) return;
 
   state.audioContext ||= new AudioContext();
+  state.audioContext.resume?.();
   const now = state.audioContext.currentTime;
-  const masterGain = state.audioContext.createGain();
-  masterGain.gain.setValueAtTime(0.0001, now);
-  masterGain.gain.exponentialRampToValueAtTime(0.12, now + 0.03);
-  masterGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.8);
-  masterGain.connect(state.audioContext.destination);
+  const compressor = state.audioContext.createDynamicsCompressor();
+  compressor.threshold.setValueAtTime(-18, now);
+  compressor.knee.setValueAtTime(24, now);
+  compressor.ratio.setValueAtTime(5, now);
+  compressor.attack.setValueAtTime(0.003, now);
+  compressor.release.setValueAtTime(0.18, now);
 
-  voicing.midiList.forEach((midi, index) => {
+  const masterGain = state.audioContext.createGain();
+  masterGain.gain.setValueAtTime(0.72, now);
+  masterGain.connect(compressor);
+  compressor.connect(state.audioContext.destination);
+
+  const scheduleTone = (midi, start, duration, peak) => {
     const oscillator = state.audioContext.createOscillator();
     const gain = state.audioContext.createGain();
     oscillator.type = "triangle";
-    oscillator.frequency.setValueAtTime(midiToFrequency(midi), now);
-    gain.gain.setValueAtTime(0.8 / voicing.midiList.length, now + index * 0.025);
+    oscillator.frequency.setValueAtTime(midiToFrequency(midi), start);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(peak, start + 0.025);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
     oscillator.connect(gain);
     gain.connect(masterGain);
-    oscillator.start(now + index * 0.025);
-    oscillator.stop(now + 1.9);
+    oscillator.start(start);
+    oscillator.stop(start + duration + 0.05);
+  };
+
+  voicing.midiList.forEach((midi, index) => {
+    scheduleTone(midi, now + index * 0.38, 0.5, 0.26);
+  });
+
+  const chordStart = now + voicing.midiList.length * 0.38 + 0.18;
+  const chordPeak = Math.min(0.18, 0.5 / Math.max(1, voicing.midiList.length));
+  voicing.midiList.forEach((midi) => {
+    scheduleTone(midi, chordStart, 1.8, chordPeak);
   });
 }
 
