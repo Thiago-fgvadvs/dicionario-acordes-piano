@@ -1,0 +1,10 @@
+{
+  "name": "dicionario-acordes-piano",
+  "version": "1.0.0",
+  "description": "App local para consultar acordes de piano, notas, cifras e inversoes.",
+  "type": "module",
+  "scripts": {
+    "dev": "python3 -m http.server 4173",
+    "test": "node --test"
+  }
+}
